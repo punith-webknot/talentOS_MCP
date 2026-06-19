@@ -11,7 +11,7 @@ load_dotenv()
 
 TALENTOS_API_BASE_URL = os.environ.get("TALENTOS_API_BASE_URL", "").rstrip("/")
 API_TIMEOUT = int(os.environ.get("TALENTOS_API_TIMEOUT", "30"))
-CONFIG_ERROR = "TALENTOS_API_BASE_URL is not set "
+CONFIG_ERROR = "TALENTOS_API_BASE_URL is not set"
 
 mcp = FastMCP("TalentOS")
 _client: httpx.Client | None = None
@@ -38,8 +38,10 @@ def _is_error(result: Any) -> bool:
     return isinstance(result, dict) and result.get("status") == "error"
 
 
-def _success(result: dict[str, Any]) -> dict[str, Any]:
-    return {"status": "success", **result}
+def _success(result: Any) -> dict[str, Any]:
+    if isinstance(result, dict):
+        return {**result, "status": "success"}
+    return {"status": "success", "data": result}
 
 
 def api_request(
@@ -55,8 +57,14 @@ def api_request(
         response = _client.request(method, path, params=params, json=json_data)
         response.raise_for_status()
         if response.status_code == 204 or not response.content:
-            return {"status": "success"}
-        return response.json()
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {
+                "status": "error",
+                "message": "Invalid JSON in API response",
+            }
     except httpx.HTTPStatusError as exc:
         return {
             "status": "error",
@@ -90,7 +98,9 @@ def get_all_designations() -> dict[str, Any]:
     result = api_request("GET", "/designations")
     if _is_error(result):
         return result
-    return {"status": "success", "designations": result}
+    if isinstance(result, list):
+        return _success({"designations": result})
+    return _success(result)
 
 
 @mcp.tool()
@@ -109,16 +119,16 @@ def get_designation_detail(name: str) -> dict[str, Any]:
 @mcp.tool()
 def get_all_jobs() -> dict[str, Any]:
     """Fetch all job listings."""
-    result = api_request("GET", "/jobs/")
+    result = api_request("GET", "/hiring-requests/")
     if _is_error(result):
         return result
     return _success(result)
 
 
 @mcp.tool()
-def get_job_by_id(job_id: str) -> dict[str, Any]:
+def get_job_by_id(hiring_request_id: str) -> dict[str, Any]:
     """Fetch a single job listing by its unique ID."""
-    result = api_request("GET", f"/jobs/{job_id}")
+    result = api_request("GET", f"/hiring-requests/{hiring_request_id}")
     if _is_error(result):
         return result
     return _success(result)
@@ -129,24 +139,26 @@ def create_job(
     title: str,
     department: str,
     location: str,
-    type: str,
+    job_type: str,
     description: str,
     requirements: list[str],
     benefits: list[str],
     is_active: bool,
+    custom_evaluation_criteria: str,
 ) -> dict[str, Any]:
     """Create and publish a new job posting."""
     payload = {
         "title": title,
         "department": department,
         "location": location,
-        "type": type,
+        "type": job_type,
         "description": description,
         "requirements": requirements,
         "benefits": benefits,
         "is_active": is_active,
+        "custom_evaluation_criteria": custom_evaluation_criteria,
     }
-    result = api_request("POST", "/jobs/", json_data=payload)
+    result = api_request("POST", "/hiring-requests/", json_data=payload)
     if _is_error(result):
         return result
     return _success(result)
@@ -154,37 +166,42 @@ def create_job(
 
 @mcp.tool()
 def update_job(
-    job_id: str,
+    hiring_request_id: str,
     title: str,
     department: str,
     location: str,
-    type: str,
+    job_type: str,
     description: str,
     requirements: list[str],
     benefits: list[str],
     is_active: bool,
+    custom_evaluation_criteria: str,
 ) -> dict[str, Any]:
     """Update an existing job posting. All fields must be provided, even if only one is changing."""
     payload = {
         "title": title,
         "department": department,
         "location": location,
-        "type": type,
+        "type": job_type,
         "description": description,
         "requirements": requirements,
         "benefits": benefits,
         "is_active": is_active,
+        "custom_evaluation_criteria": custom_evaluation_criteria,
     }
-    result = api_request("PUT", f"/jobs/{job_id}", json_data=payload)
+    result = api_request("PUT", f"/hiring-requests/{hiring_request_id}", json_data=payload)
     if _is_error(result):
         return result
     return _success(result)
 
 
 @mcp.tool()
-def delete_job(job_id: str) -> dict[str, Any]:
+def delete_job(hiring_request_id: str) -> dict[str, Any]:
     """Permanently delete a job posting by its unique ID."""
-    return api_request("DELETE", f"/jobs/{job_id}")
+    result = api_request("DELETE", f"/hiring-requests/{hiring_request_id}")
+    if _is_error(result):
+        return result
+    return _success(result)
 
 
 if __name__ == "__main__":
