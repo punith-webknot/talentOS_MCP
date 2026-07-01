@@ -204,6 +204,65 @@ def delete_job(hiring_request_id: str) -> dict[str, Any]:
     return _success(result)
 
 
+# ---------------------------------------------------------------------------
+# Applications
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def list_applications(
+    job_id: str,
+    status: str | None = None,
+    schedule: str | None = None,
+    min_score: int | None = None,
+    max_score: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+) -> dict[str, Any]:
+    """List job applications for a job with optional filters.
+
+    job_id is required. Optional filters: evaluation status (e.g. SHORTLISTED,
+    REJECTED), schedule (scheduled or unscheduled), ATS score range (0-100),
+    created date range (ISO 8601), and pagination (limit 1-100, offset).
+    """
+    params: dict[str, Any] = {"job_id": job_id}
+    if status is not None:
+        params["status"] = status
+    if schedule is not None:
+        params["schedule"] = schedule
+    if min_score is not None:
+        params["min_score"] = min_score
+    if max_score is not None:
+        params["max_score"] = max_score
+    if date_from is not None:
+        params["date_from"] = date_from
+    if date_to is not None:
+        params["date_to"] = date_to
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+
+    result = api_request("GET", "/applications/", params=params)
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
+@mcp.tool()
+def get_application_by_id(application_id: str) -> dict[str, Any]:
+    """Fetch a job application by its unique ID.
+
+    Returns candidate details, resume URL, evaluation summary, fit score,
+    application status, and related job metadata.
+    """
+    result = api_request("GET", f"/applications/{application_id}")
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"TalentOS MCP server starting on port {port}")
