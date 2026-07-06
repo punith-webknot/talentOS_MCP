@@ -1,0 +1,11 @@
+[project]
+name = "talentos-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=3.4.2",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
+]
