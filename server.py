@@ -117,9 +117,44 @@ def get_designation_detail(name: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def get_all_jobs() -> dict[str, Any]:
-    """Fetch all job listings."""
-    result = api_request("GET", "/hiring-requests/")
+def get_all_jobs(
+    q: str | None = None,
+    department: str | None = None,
+    location: str | None = None,
+    job_type: str | None = None,
+    is_active: bool | None = None,
+    created_from: str | None = None,
+    created_to: str | None = None,
+    page: int | None = None,
+    per_page: int | None = None,
+) -> dict[str, Any]:
+    """List job listings with optional search, filters, and pagination.
+
+    All parameters are optional. Search with q (title, department, or location),
+    filter by department, location, type, or active status, narrow by created date
+    range (ISO 8601), and paginate with page (default 1) and per_page (default 10, max 50).
+    """
+    params: dict[str, Any] = {}
+    if q is not None:
+        params["q"] = q
+    if department is not None:
+        params["department"] = department
+    if location is not None:
+        params["location"] = location
+    if job_type is not None:
+        params["type"] = job_type
+    if is_active is not None:
+        params["is_active"] = is_active
+    if created_from is not None:
+        params["created_from"] = created_from
+    if created_to is not None:
+        params["created_to"] = created_to
+    if page is not None:
+        params["page"] = page
+    if per_page is not None:
+        params["per_page"] = per_page
+
+    result = api_request("GET", "/hiring-requests/", params=params or None)
     if _is_error(result):
         return result
     return _success(result)
