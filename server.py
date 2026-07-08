@@ -298,6 +298,96 @@ def get_application_by_id(application_id: str) -> dict[str, Any]:
     return _success(result)
 
 
+# ---------------------------------------------------------------------------
+# Ask Form
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def ask_form(
+    emp_ids: list[str],
+    form_type: str = "SLOTS",
+) -> dict[str, Any]:
+    """Send a slot-selection form link email to one or more employees.
+
+    Currently only SLOTS is supported. Mail is sent in the background after the
+    response returns. Form links are valid for 24 hours.
+
+    Args:
+        emp_ids: At least one employee ID, e.g. ["EMP028", "EMP200"].
+        form_type: Form type; defaults to "SLOTS". REVIEW is not implemented yet.
+
+    Returns per-employee results with status SUCCESS or FAILED. SUCCESS messages
+    include "New link sent" or "Existing link resent". FAILED messages include
+    "Employee not found", "Invalid or missing email", or "Email service not configured".
+    """
+    payload: dict[str, Any] = {"emp_ids": emp_ids, "type": form_type}
+    result = api_request("POST", "/ask-form", json_data=payload)
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
+@mcp.tool()
+def get_employee_form_status(
+    form_type: str,
+    status: str,
+    emp_ids: list[str] | None = None,
+    page: int | None = None,
+    per_page: int | None = None,
+) -> dict[str, Any]:
+    """List employees filtered by their latest form of the given type and status.
+
+    One row per employee (their most recent form for that type). SENT means not
+    submitted; SUBMITTED means submitted; EXPIRED means the link expired.
+
+    Args:
+        form_type: Form type — "SLOTS" or "REVIEW".
+        status: Form status — "SENT", "SUBMITTED", or "EXPIRED".
+        emp_ids: Optional employee IDs to narrow results; omit for all employees.
+        page: Page number (default 1, min 1).
+        per_page: Page size (default 20, min 1, max 100).
+    """
+    params: dict[str, Any] = {"type": form_type, "status": status}
+    if emp_ids is not None:
+        params["emp_ids"] = emp_ids
+    if page is not None:
+        params["page"] = page
+    if per_page is not None:
+        params["per_page"] = per_page
+
+    result = api_request("GET", "/employees/form-status", params=params)
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
+# ---------------------------------------------------------------------------
+# Slots
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def get_employee_slots(emp_ids: list[str]) -> dict[str, Any]:
+    """Get available, future slots for one or more employees (batch).
+
+    Unknown employee IDs are included with an empty slots list (no error).
+    Only available slots are returned; past slots are excluded. Times are in IST.
+
+    Args:
+        emp_ids: At least one employee ID, e.g. ["EMP028", "EMP200"].
+
+    Each slot has id (UUID), label (IST time range), and day ("Today", "Tomorrow",
+    or a date like "08 Jul").
+    """
+    result = api_request(
+        "GET",
+        "/slots/employee",
+        params={"emp_ids": emp_ids},
+    )
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"TalentOS MCP server starting on port {port}")
