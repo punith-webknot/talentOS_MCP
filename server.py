@@ -366,7 +366,7 @@ def ask_form(
     request interview reviews. Mail is sent in the background. Links valid 24h.
 
     Args:
-        emp_ids: At least one employee ID, e.g. ["EMP028", "EMP200"].
+        emp_ids: At least one employee ID.
         form_type: "SLOTS" (default) or "REVIEW".
         round_id: Required when form_type is "REVIEW" — round UUID.
         candidate_id: Required when form_type is "REVIEW" — candidate ID.
