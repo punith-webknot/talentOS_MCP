@@ -582,6 +582,71 @@ def get_round_details(round_id: str) -> dict[str, Any]:
     return _success(result)
 
 
+@mcp.tool()
+def shortlist_round(round_id: str, remark: str = "") -> dict[str, Any]:
+    """Shortlist a candidate for a round. Use when HR asks to shortlist this candidate.
+
+    Args:
+        round_id: The round UUID.
+        remark: Optional remark for the shortlist decision.
+
+    Returns the updated round (id, candidate_id, slot_id, jd_id, name,
+    round_verdict, created_at, updated_at). Errors: 404 round not found;
+    400 round has no candidate or candidate already finalized.
+    """
+    payload: dict[str, Any] = {"verdict": "shortlisted", "remark": remark}
+    result = api_request("POST", f"/rounds/{round_id}/shortlist", json_data=payload)
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
+@mcp.tool()
+def reject_round(round_id: str, remark: str = "") -> dict[str, Any]:
+    """Reject a candidate for a round. Use when HR asks to reject this candidate.
+
+    WARNING: The candidate will be permanently moved out of the hiring pipeline.
+
+    Args:
+        round_id: The round UUID.
+        remark: Optional remark for the reject decision.
+
+    Returns the updated round with round_verdict "rejected". Errors: 404 round
+    not found; 400 round has no candidate or candidate already finalized.
+    """
+    payload: dict[str, Any] = {"verdict": "rejected", "remark": remark}
+    result = api_request("POST", f"/rounds/{round_id}/reject", json_data=payload)
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
+@mcp.tool()
+def set_final_verdict(candidate_id: int, verdict: str) -> dict[str, Any]:
+    """Set the final hiring verdict for a candidate.
+
+    Use when HR asks to update the final verdict of this candidate.
+
+    WARNING: The candidate will be permanently moved out of the hiring pipeline.
+
+    Args:
+        candidate_id: The candidate / application ID.
+        verdict: Final verdict — "SELECTED" or "REJECTED".
+
+    Returns the evaluation response. Errors if the candidate is already
+    finalized (e.g. "Candidate 1 already finalized with verdict SELECTED").
+    """
+    payload: dict[str, Any] = {"verdict": verdict}
+    result = api_request(
+        "PATCH",
+        f"/applications/{candidate_id}/final-verdict",
+        json_data=payload,
+    )
+    if _is_error(result):
+        return result
+    return _success(result)
+
+
 # ===========================================================================
 # Phase: Alerts (slot & review notifications)
 # ===========================================================================
