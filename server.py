@@ -9,17 +9,25 @@ from fastmcp import FastMCP
 # Load environment variables directly
 load_dotenv()
 
-TALENTOS_API_BASE_URL = os.environ.get("TALENTOS_API_BASE_URL", "").rstrip("/")
+# Compose/Infra injects TALENTOS_BACKEND_URL + TALENTOS_BACKEND_TOKEN.
+# TALENTOS_API_BASE_URL is kept as a fallback for older/local setups.
+TALENTOS_BACKEND_URL = os.environ.get("TALENTOS_BACKEND_URL") or os.environ.get("TALENTOS_API_BASE_URL", "")
+TALENTOS_API_BASE_URL = TALENTOS_BACKEND_URL.rstrip("/")
+TALENTOS_BACKEND_TOKEN = os.environ.get("TALENTOS_BACKEND_TOKEN", "").strip()
 API_TIMEOUT = int(os.environ.get("TALENTOS_API_TIMEOUT", "30"))
-CONFIG_ERROR = "TALENTOS_API_BASE_URL is not set"
+CONFIG_ERROR = "TALENTOS_BACKEND_URL is not set"
 
 mcp = FastMCP("TalentOS")
 _client: httpx.Client | None = None
 
 if TALENTOS_API_BASE_URL:
+    headers = {"Content-Type": "application/json"}
+    if TALENTOS_BACKEND_TOKEN:
+        headers["Authorization"] = f"Bearer {TALENTOS_BACKEND_TOKEN}"
     _client = httpx.Client(
         base_url=f"{TALENTOS_API_BASE_URL}/api/v1",
         timeout=API_TIMEOUT,
+        headers=headers,
     )
     atexit.register(_client.close)
 
@@ -36,6 +44,18 @@ def _error_message(response: httpx.Response) -> str:
 
 def _is_error(result: Any) -> bool:
     return isinstance(result, dict) and result.get("status") == "error"
+
+
+def _normalize_locations(location: str | list[str]) -> list[str]:
+    """Normalize a location value into the list the backend requires.
+
+    Accepts a comma-separated string ("Bangalore, Remote") or a list
+    (["Bangalore", "Remote"]). The backend's HiringRequestCreate schema
+    requires ``location: list[str]``.
+    """
+    if isinstance(location, str):
+        return [loc.strip() for loc in location.split(",") if loc.strip()]
+    return [loc.strip() for loc in location if loc and loc.strip()]
 
 
 def _success(result: Any) -> dict[str, Any]:
@@ -173,7 +193,7 @@ def get_job_by_id(hiring_request_id: str) -> dict[str, Any]:
 def create_job(
     title: str,
     department: str,
-    location: str,
+    location: str | list[str],
     job_type: str,
     description: str,
     requirements: list[str],
@@ -185,7 +205,7 @@ def create_job(
     payload = {
         "title": title,
         "department": department,
-        "location": location,
+        "location": _normalize_locations(location),
         "type": job_type,
         "description": description,
         "requirements": requirements,
@@ -202,28 +222,37 @@ def create_job(
 @mcp.tool()
 def update_job(
     hiring_request_id: str,
-    title: str,
-    department: str,
-    location: str,
-    job_type: str,
-    description: str,
-    requirements: list[str],
-    benefits: list[str],
-    is_active: bool,
-    custom_evaluation_criteria: str,
+    title: str | None = None,
+    department: str | None = None,
+    location: str | list[str] | None = None,
+    job_type: str | None = None,
+    description: str | None = None,
+    requirements: list[str] | None = None,
+    benefits: list[str] | None = None,
+    is_active: bool | None = None,
+    custom_evaluation_criteria: str | None = None,
 ) -> dict[str, Any]:
-    """Update an existing job posting. All fields must be provided, even if only one is changing."""
-    payload = {
-        "title": title,
-        "department": department,
-        "location": location,
-        "type": job_type,
-        "description": description,
-        "requirements": requirements,
-        "benefits": benefits,
-        "is_active": is_active,
-        "custom_evaluation_criteria": custom_evaluation_criteria,
-    }
+    """Update an existing job posting. Only include the fields you want to change."""
+    payload: dict[str, Any] = {}
+    if title is not None:
+        payload["title"] = title
+    if department is not None:
+        payload["department"] = department
+    if location is not None:
+        payload["location"] = _normalize_locations(location)
+    if job_type is not None:
+        payload["type"] = job_type
+    if description is not None:
+        payload["description"] = description
+    if requirements is not None:
+        payload["requirements"] = requirements
+    if benefits is not None:
+        payload["benefits"] = benefits
+    if is_active is not None:
+        payload["is_active"] = is_active
+    if custom_evaluation_criteria is not None:
+        payload["custom_evaluation_criteria"] = custom_evaluation_criteria
+
     result = api_request("PUT", f"/hiring-requests/{hiring_request_id}", json_data=payload)
     if _is_error(result):
         return result
