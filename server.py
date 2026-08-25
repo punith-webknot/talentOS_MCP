@@ -5,12 +5,16 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
 
 # Load environment variables directly
 load_dotenv()
 
 # Compose/Infra injects TALENTOS_BACKEND_URL + TALENTOS_BACKEND_TOKEN.
 # TALENTOS_API_BASE_URL is kept as a fallback for older/local setups.
+# TALENTOS_BACKEND_TOKEN is now only a fallback: when the MCP server is called
+# by the AI chat assistant, the chat user's own JWT (forwarded in the incoming
+# Authorization header) is used instead so backend calls run as that user.
 TALENTOS_BACKEND_URL = os.environ.get("TALENTOS_BACKEND_URL") or os.environ.get("TALENTOS_API_BASE_URL", "")
 TALENTOS_API_BASE_URL = TALENTOS_BACKEND_URL.rstrip("/")
 TALENTOS_BACKEND_TOKEN = os.environ.get("TALENTOS_BACKEND_TOKEN", "").strip()
@@ -46,6 +50,27 @@ def _is_error(result: Any) -> bool:
     return isinstance(result, dict) and result.get("status") == "error"
 
 
+def _auth_header() -> str | None:
+    """Resolve the Authorization header for backend calls.
+
+    Prefers the caller's own Authorization header (the chat user's JWT
+    forwarded by the AI service through MCP), falling back to the shared
+    service token ``TALENTOS_BACKEND_TOKEN`` when no request context exists
+    (e.g. local/direct invocations or other callers).
+    """
+    try:
+        request = get_http_request()
+        if request is not None:
+            auth = request.headers.get("Authorization")
+            if auth:
+                return auth
+    except Exception:
+        pass
+    if TALENTOS_BACKEND_TOKEN:
+        return f"Bearer {TALENTOS_BACKEND_TOKEN}"
+    return None
+
+
 def _normalize_locations(location: str | list[str]) -> list[str]:
     """Normalize a location value into the list the backend requires.
 
@@ -74,7 +99,11 @@ def api_request(
     if _client is None:
         return {"status": "error", "message": CONFIG_ERROR}
     try:
-        response = _client.request(method, path, params=params, json=json_data)
+        headers: dict[str, str] = {}
+        auth = _auth_header()
+        if auth:
+            headers["Authorization"] = auth
+        response = _client.request(method, path, params=params, json=json_data, headers=headers)
         response.raise_for_status()
         if response.status_code == 204 or not response.content:
             return {}
