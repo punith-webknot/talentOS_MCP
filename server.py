@@ -74,13 +74,35 @@ def _auth_header() -> str | None:
 def _normalize_locations(location: str | list[str]) -> list[str]:
     """Normalize a location value into the list the backend requires.
 
-    Accepts a comma-separated string ("Bangalore, Remote") or a list
-    (["Bangalore", "Remote"]). The backend's HiringRequestCreate schema
-    requires ``location: list[str]``.
+    Accepts a comma-separated string ("Bangalore, Remote"), a list
+    (["Bangalore", "Remote"]), or a missing/empty value (defaults to
+    ["Remote"]). The backend's HiringRequestCreate schema requires
+    ``location: list[str]``.
     """
+    if location is None:
+        return ["Remote"]
     if isinstance(location, str):
-        return [loc.strip() for loc in location.split(",") if loc.strip()]
-    return [loc.strip() for loc in location if loc and loc.strip()]
+        parts = [loc.strip() for loc in location.split(",") if loc.strip()]
+        return parts or ["Remote"]
+    parts = [loc.strip() for loc in location if loc and loc.strip()]
+    return parts or ["Remote"]
+
+
+def _normalize_string_list(value: str | list[str] | None, default: list[str]) -> list[str]:
+    """Normalize a requirements/benefits value into a list[str].
+
+    Accepts a list, a newline/comma-separated string, or a missing value.
+    Falls back to ``default`` when nothing usable is supplied so a partial
+    tool call still succeeds instead of erroring the whole workflow.
+    """
+    if value is None:
+        return list(default)
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text:
+        return list(default)
+    return [part.strip() for part in text.splitlines() if part.strip()]
 
 
 def _success(result: Any) -> dict[str, Any]:
@@ -221,26 +243,32 @@ def get_job_by_id(hiring_request_id: str) -> dict[str, Any]:
 @mcp.tool()
 def create_job(
     title: str,
-    department: str,
-    location: str | list[str],
-    job_type: str,
-    description: str,
-    requirements: list[str],
-    benefits: list[str],
-    is_active: bool,
-    custom_evaluation_criteria: str,
+    department: str = "General",
+    location: str | list[str] | None = None,
+    job_type: str = "Full-time",
+    description: str = "",
+    requirements: list[str] | str | None = None,
+    benefits: list[str] | str | None = None,
+    is_active: bool = True,
+    custom_evaluation_criteria: str = "",
 ) -> dict[str, Any]:
-    """Create and publish a new job posting."""
+    """Create and publish a new job posting.
+
+    Only ``title`` is strictly required. Any missing field is filled with a
+    sensible default (location -> ["Remote"], type -> Full-time, department ->
+    General, etc.) so a partially-specified or mock posting can still be
+    published without blocking the caller.
+    """
     payload = {
         "title": title,
-        "department": department,
+        "department": department or "General",
         "location": _normalize_locations(location),
-        "type": job_type,
-        "description": description,
-        "requirements": requirements,
-        "benefits": benefits,
-        "is_active": is_active,
-        "custom_evaluation_criteria": custom_evaluation_criteria,
+        "type": job_type or "Full-time",
+        "description": description or "",
+        "requirements": _normalize_string_list(requirements, []),
+        "benefits": _normalize_string_list(benefits, []),
+        "is_active": True if is_active is None else is_active,
+        "custom_evaluation_criteria": custom_evaluation_criteria or "",
     }
     result = api_request("POST", "/hiring-requests/", json_data=payload)
     if _is_error(result):
@@ -256,8 +284,8 @@ def update_job(
     location: str | list[str] | None = None,
     job_type: str | None = None,
     description: str | None = None,
-    requirements: list[str] | None = None,
-    benefits: list[str] | None = None,
+    requirements: list[str] | str | None = None,
+    benefits: list[str] | str | None = None,
     is_active: bool | None = None,
     custom_evaluation_criteria: str | None = None,
 ) -> dict[str, Any]:
@@ -274,9 +302,9 @@ def update_job(
     if description is not None:
         payload["description"] = description
     if requirements is not None:
-        payload["requirements"] = requirements
+        payload["requirements"] = _normalize_string_list(requirements, [])
     if benefits is not None:
-        payload["benefits"] = benefits
+        payload["benefits"] = _normalize_string_list(benefits, [])
     if is_active is not None:
         payload["is_active"] = is_active
     if custom_evaluation_criteria is not None:
